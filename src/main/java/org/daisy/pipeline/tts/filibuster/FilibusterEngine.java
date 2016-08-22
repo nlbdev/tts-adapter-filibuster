@@ -13,14 +13,15 @@ import net.sf.saxon.s9api.XdmNode;
 import org.daisy.pipeline.audio.AudioBuffer;
 import org.daisy.pipeline.tts.AudioBufferAllocator;
 import org.daisy.pipeline.tts.AudioBufferAllocator.MemoryException;
-import org.daisy.pipeline.tts.MarklessTTSEngine;
+import org.daisy.pipeline.tts.TTSEngine;
 import org.daisy.pipeline.tts.TTSRegistry.TTSResource;
+import org.daisy.pipeline.tts.TTSService.Mark;
 import org.daisy.pipeline.tts.TTSService.SynthesisException;
+import org.daisy.pipeline.tts.Voice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.daisy.pipeline.tts.Voice;
 
-public class FilibusterEngine extends MarklessTTSEngine {
+public class FilibusterEngine extends TTSEngine {
 	private Logger logger = LoggerFactory.getLogger(FilibusterEngine.class);
 
 	private AudioFormat audioFormat;
@@ -66,9 +67,10 @@ public class FilibusterEngine extends MarklessTTSEngine {
 	}
 
 	@Override
-	public Collection<AudioBuffer> synthesize(String sentence, XdmNode xmlSentence, Voice voice, TTSResource threadResources,
-											  AudioBufferAllocator bufferAllocator, boolean retry)
-													  	throws SynthesisException,InterruptedException, MemoryException {
+	public Collection<AudioBuffer> synthesize(String sentence, XdmNode xmlSentence,
+	        Voice voice, TTSResource threadResources, List<Mark> marks,
+	        AudioBufferAllocator bufferAllocator, boolean retry) throws SynthesisException,
+	        InterruptedException, MemoryException {
 		
 		logger.debug(threadId()+"synthesizing: '"+sentence+"'");
 		

@@ -140,7 +140,12 @@ public class FilibusterInstance {
 				if (bytesAvailable <= 0) {
 					if (new Date().getTime() - timeout.getTime() < 1000 || new Date().getTime() - instanceStartTime.getTime() < 60000) {
 						logger.debug(threadId()+"sleeping 100ms to see if more data arrives...");
-						Thread.sleep(100);
+						try {
+							Thread.sleep(100);
+							
+						} catch (InterruptedException e) {
+							// thread interrupted, oh well, let's continue then...
+						}
 						
 					} else {
 						break;
