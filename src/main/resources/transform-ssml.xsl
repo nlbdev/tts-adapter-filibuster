@@ -10,8 +10,6 @@
 
   <xsl:template match="*">
     <xsl:value-of select="string-join(.//text(),'')"/>
-    <xsl:text>[[slnc 250ms]]</xsl:text>
-    <xsl:message select="string-join((.//text(),'[[slnc 250ms]]'),'')"/>
   </xsl:template>
 
 </xsl:stylesheet>

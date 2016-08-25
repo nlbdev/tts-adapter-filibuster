@@ -6,7 +6,7 @@ TTS adapter for NLBs Filibuster-voice Brage.
 Run test with:
 
 ```
-FILIBUSTER_HOME="/home/jostein/nlb/filibuster-brage/" mvn clean test -Ptester
+mvn clean test -Ptester
 ```
 
-Swap out the `FILIBUSTER_HOME`-path with whatever the path to Filibuster/Brage is on your system.
+If you have Filibuster stored in a non-standard location (i.e. not `/opt/filibuster` or `C:\filibuster`) then you can use the `FILIBUSTER_HOME` environment variable to set the path for your system. For instance: `export FILIBUSTER_HOME="/home/jostein/nlb/filibuster-brage/"`.

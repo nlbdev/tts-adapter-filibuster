@@ -1,5 +1,6 @@
 package org.daisy.pipeline.tts.filibuster;
 
+import java.io.File;
 import java.util.Map;
 
 import org.daisy.common.shell.BinaryFinder;
@@ -33,7 +34,15 @@ public class FilibusterService extends AbstractTTSService {
 			filibusterPath = System.getenv(filibusterEnv);
 		}
 		if (filibusterPath == null) {
-			throw new SynthesisException("Cannot find the path to filibuster using either system property " + filibusterProp + " or environment variable " + filibusterEnv);
+			if (new File("/opt/filibuster/").isDirectory()) {
+				filibusterPath = new File("/opt/filibuster").getCanonicalPath();
+				
+			} else if (new File("C:\\filibuster\\").isDirectory()) {
+				filibusterPath = new File("C:\\filibuster\\").getCanonicalPath(); 
+			}
+		}
+		if (filibusterPath == null) {
+			throw new SynthesisException("Cannot find the path to filibuster using either system property " + filibusterProp + " or environment variable " + filibusterEnv + " and filibuster was not found in /opt/filibuster/ nor in C:\\filibuster\\");
 		}
 
 		String priority = params.get("filibuster.priority");
