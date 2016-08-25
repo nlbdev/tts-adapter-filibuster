@@ -30,16 +30,7 @@ public class FilibusterEngine extends TTSEngine {
 	private File filibusterPath;
 	private int priority;
     
-	class FilibusterTTSResource {
-		public TTSResource ttsResource;
-		public FilibusterInstance filibusterInstance;
-		public FilibusterTTSResource(TTSResource ttsResource, FilibusterInstance filibusterInstance) {
-			this.ttsResource = ttsResource;
-			this.filibusterInstance = filibusterInstance;
-		}
-	}
-	
-	private Map<FilibusterTTSResource, List<Thread>> filibusterInstances = Collections.synchronizedMap(new HashMap<FilibusterTTSResource, List<Thread>>());
+	private Map<FilibusterInstance, List<Thread>> filibusterInstances = Collections.synchronizedMap(new HashMap<FilibusterInstance, List<Thread>>());
 	private static final int MAX_FILIBUSTER_INSTANCES;
 	
 	// set MAX_FILIBUSTER_INSTANCES based on environment variable FILIBUSTER_INSTANCES or system property filibuster.instances
@@ -74,6 +65,21 @@ public class FilibusterEngine extends TTSEngine {
 		// for debugging
 		return (Thread.currentThread().getId()+"").replaceAll("^.*(..)$", "$1")+": ";
 	}
+	
+	@Override
+	public int expectedMillisecPerWord() {
+		return 5000;
+	};
+	
+	@Override
+	public int reservedThreadNum() {
+		return MAX_FILIBUSTER_INSTANCES;
+	};
+	
+	@Override
+	public void interruptCurrentWork(TTSResource resource) {
+		// ignore interrupt requests! this is a slow TTS...
+	};
 
 	@Override
 	public Collection<AudioBuffer> synthesize(String sentence, XdmNode xmlSentence,
@@ -81,64 +87,12 @@ public class FilibusterEngine extends TTSEngine {
 	        AudioBufferAllocator bufferAllocator, boolean retry) throws SynthesisException,
 	        InterruptedException, MemoryException {
 		
-		logger.debug(threadId()+"synthesizing: '"+sentence+"'");
-		
-		FilibusterTTSResource filibusterResource = null;
-		
-		logger.debug(threadId()+"synthesize() -- waiting for engine lock");
-		synchronized (this) {
-			logger.debug(threadId()+"synthesize() -- got engine lock");
-			for (FilibusterTTSResource instance : filibusterInstances.keySet()) {
-				List<Thread> threadList = filibusterInstances.get(instance);
-				if (threadList.contains(Thread.currentThread())) {
-					filibusterResource = instance;
-				}
-			}
-			if (filibusterResource == null && filibusterInstances.size() < MAX_FILIBUSTER_INSTANCES) {
-				filibusterResource = new FilibusterTTSResource(new TTSResource(), new FilibusterInstance(cmd, env, filibusterPath));
-				List<Thread> threadList = new ArrayList<Thread>();
-				threadList.add(Thread.currentThread());
-				filibusterInstances.put(filibusterResource, threadList);
-			}
-			if (filibusterResource == null) {
-				logger.debug(threadId()+"no room for more filibuster instances; reusing a filibuster instance");
-				int minThreads = -1;
-				FilibusterTTSResource instanceWithLeastThreads = null;
-				for (FilibusterTTSResource instance : filibusterInstances.keySet()) {
-					List<Thread> threadList = filibusterInstances.get(instance);
-					if (minThreads < 0 || threadList.size() < minThreads) {
-						minThreads = threadList.size();
-						instanceWithLeastThreads = instance;
-					}
-				}
-				filibusterInstances.get(instanceWithLeastThreads).add(Thread.currentThread());
-				filibusterResource = instanceWithLeastThreads;
-			}
-		}
-		logger.debug(threadId()+"synthesize() -- released engine lock");
-		
-		try {
-			synchronized (filibusterResource.filibusterInstance) {
-				return filibusterResource.filibusterInstance.synthesize(sentence, bufferAllocator);
-			}
+		if (threadResources instanceof FilibusterInstance) {
+			logger.debug(threadId()+"synthesizing: '"+sentence+"'");
+			return ((FilibusterInstance)threadResources).synthesize(sentence, bufferAllocator);
 			
-		} catch (SynthesisException e) {
-			for (StackTraceElement line : e.getStackTrace()) {
-				logger.warn(threadId()+line.toString());
-			}
-			throw e;
-			
-		} catch (InterruptedException e) {
-			for (StackTraceElement line : e.getStackTrace()) {
-				logger.warn(threadId()+line.toString());
-			}
-			throw e;
-			
-		} catch (MemoryException e) {
-			for (StackTraceElement line : e.getStackTrace()) {
-				logger.warn(threadId()+line.toString());
-			}
-			throw e;
+		} else {
+			throw new SynthesisException("FilibusterEngine can only synthesize with a FilibusterInstance, not any other TTSResource");
 		}
 	}
 
@@ -160,47 +114,64 @@ public class FilibusterEngine extends TTSEngine {
 	}
 
 	@Override
-	public TTSResource allocateThreadResources() throws SynthesisException, InterruptedException {
-		for (FilibusterTTSResource filibusterResource : filibusterInstances.keySet()) {
-			for (Thread thread : filibusterInstances.get(filibusterResource)) {
-				if (thread == Thread.currentThread()) {
-					return filibusterResource.ttsResource;
-				}
+	public synchronized TTSResource allocateThreadResources() throws SynthesisException, InterruptedException {
+		
+		for (FilibusterInstance instance : filibusterInstances.keySet()) {
+			List<Thread> threadList = filibusterInstances.get(instance);
+			if (threadList.contains(Thread.currentThread())) {
+				return instance;
 			}
 		}
-		return null;
+		
+		if (filibusterInstances.size() < MAX_FILIBUSTER_INSTANCES) {
+			FilibusterInstance instance = new FilibusterInstance(cmd, env, filibusterPath);
+			List<Thread> threadList = new ArrayList<Thread>();
+			threadList.add(Thread.currentThread());
+			filibusterInstances.put(instance, threadList);
+			return instance;
+		}
+		
+		logger.debug(threadId()+"no room for more filibuster instances; reusing a filibuster instance");
+		int minThreads = -1;
+		FilibusterInstance instanceWithLeastThreads = null;
+		for (FilibusterInstance instance : filibusterInstances.keySet()) {
+			List<Thread> threadList = filibusterInstances.get(instance);
+			if (minThreads < 0 || threadList.size() < minThreads) {
+				minThreads = threadList.size();
+				instanceWithLeastThreads = instance;
+			}
+		}
+		filibusterInstances.get(instanceWithLeastThreads).add(Thread.currentThread());
+		return instanceWithLeastThreads;
+		
 	}
 
 	@Override
-	public void releaseThreadResources(TTSResource resource) throws SynthesisException, InterruptedException {
-		logger.debug(threadId()+"releaseThreadResources() -- waiting for engine lock");
-		synchronized (this) {
-			logger.debug(threadId()+"releaseThreadResources() -- got engine lock");
-			List<Thread> threadList = null;
-			FilibusterTTSResource filibusterInstance = null;
-			for (FilibusterTTSResource filibusterResource : filibusterInstances.keySet()) {
-				threadList = filibusterInstances.get(filibusterResource);
-				if (threadList.contains(Thread.currentThread())) {
-					filibusterInstance = filibusterResource;
-					break;
-				}
+	public synchronized void releaseThreadResources(TTSResource resource) throws SynthesisException, InterruptedException {
+		logger.debug(threadId()+"releaseThreadResources() -- got engine lock");
+		
+		List<Thread> threadList = null;
+		FilibusterInstance instance = null;
+		for (FilibusterInstance i : filibusterInstances.keySet()) {
+			threadList = filibusterInstances.get(i);
+			if (threadList.contains(Thread.currentThread())) {
+				instance = i;
+				break;
 			}
-			if (threadList != null) {
-				threadList.remove(Thread.currentThread());
-				logger.debug(threadId()+"thread removed itself from filibuster instance");
-				if (threadList.isEmpty()) {
-					logger.debug(threadId()+"no more threads using this filibuster instance; stopping filibuster...");
-					// Try stopping Filibuster
-					synchronized (filibusterInstance.filibusterInstance) {
-						filibusterInstance.filibusterInstance.stopFilibuster();
-					}
-					filibusterInstances.remove(filibusterInstance);
-				}
-			}
+		}
+		
+		if (threadList != null) {
+			threadList.remove(Thread.currentThread());
+			logger.debug(threadId()+"thread removed itself from filibuster instance");
+			/*if (threadList.isEmpty()) {
+				logger.debug(threadId()+"no more threads using this filibuster instance; stopping filibuster...");
+				// Try stopping Filibuster
+				instance.stopFilibuster(false);
+				filibusterInstances.remove(instance);
+			}*/
 		}
 		super.releaseThreadResources(resource);
 		logger.debug(threadId()+"releaseThreadResources() -- released engine lock");
-		
 	}
 
 }
